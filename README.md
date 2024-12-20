@@ -79,13 +79,36 @@ To test the Monarch service using `redis-cli`, follow these steps:
 ## System Diagram
 
 ```mermaid
-graph TD;
-    A[Monarch Service] -->|Requests Data| B[LearningAPI Django REST API];
-    B -->|Returns Data| A;
-    A -->|Stores Data| C[Redis];
-    C -->|Provides Cached Data| A;
+sequenceDiagram
+    participant API as Django API
+    participant Redis
+    participant Monarch
+    participant GitHub
+    participant Slack
+    participant Log
+
+    API->>Redis: Publish migration request
+    Note over API,Redis: Contains source and target repos
+
+    Redis->>Monarch: Receive message
+
+    Monarch->>GitHub: Query source repo for issues
+    GitHub-->>Monarch: Return list of issues
+
+    alt Has issues to migrate
+        loop All target repositories
+           loop All issues tickets
+           Monarch->>GitHub: Migrate issue to target repo
+           GitHub-->>Monarch: HTTP Response
+           Monarch->>Log: Issue has been migrated
+           end
+        end
+        Monarch->>Slack: Send success notification
+    else No issues found
+        Monarch->>Log: Migration skipped
+    end
 ```
 
 ## License
-This project is licensed under the MIT License.
+This project is licensed under the GNU GENERAL PUBLIC LICENSE.
 
