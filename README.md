@@ -1,7 +1,20 @@
 # Monarch Service
 
 ## Overview
-The Monarch service is a microservice that interacts with the external LearningAPI Django REST API project to provide enhanced learning platform functionalities.
+
+The Monarch service is a microservice that is part of the Learning Platform that handles migrating tickets from the source group project repositories to each of the student teams' repositories. The Learning Platform API sends a message to the **channel_migrate_issue_tickets** channel after repos are created, students are added as collaborators, and Slack messages have been sent.
+
+```py
+message = json.dumps({
+    'notification_channel': cohort.slack_channel,
+    'source_repo': project.client_template_url,
+    'all_target_repositories': issue_target_repos
+})
+
+redis_client.publish('channel_migrate_issue_tickets', message)
+```
+
+The Monarch service listens for messages on the channel and kicks off issue ticket migration if the source repository has any, otherwise the migration process is skipped.
 
 ## Dependencies
 - Python 3.8+

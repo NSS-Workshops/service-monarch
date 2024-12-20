@@ -1,32 +1,12 @@
 version: '3.8'
 
-networks:
-  monarch:
-    internal: true
-
 services:
-  redis:
-    image: redis:7-alpine
-    command: redis-server --appendonly yes
-    networks:
-      - monarch
-    volumes:
-      - redis-data:/data
-    restart: unless-stopped
-
   monarch:
     image: registry.digitalocean.com/your-registry/monarch:latest
-    networks:
-      - monarch
     environment:
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - REDIS_DB=0
+      - REDIS_HOST=${REDIS_HOST}
+      - REDIS_PORT=${REDIS_PORT}
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
       - GITHUB_TOKEN=${GITHUB_TOKEN}
       - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN}
-    depends_on:
-      - redis
     restart: unless-stopped
-
-volumes:
-  redis-data:

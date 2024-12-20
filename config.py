@@ -7,6 +7,7 @@ class Settings(BaseModel):
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
     REDIS_DB: int = 0
+    REDIS_PASSWORD: str
     GITHUB_API_URL: HttpUrl = "https://api.github.com"
     GITHUB_TOKEN: str = os.getenv("GITHUB_PAT")
     GITHUB_RATE_LIMIT_PAUSE: int = 5
