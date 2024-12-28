@@ -4,12 +4,12 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
-redis = "*"
 requests = "*"
 pydantic = "*"
 structlog = "*"
 prometheus-client = "*"
 tenacity = "*"
+valkey = "*"
 
 [dev-packages]
 

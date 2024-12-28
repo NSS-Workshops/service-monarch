@@ -4,9 +4,9 @@ services:
   monarch:
     image: registry.digitalocean.com/your-registry/monarch:latest
     environment:
-      - REDIS_HOST=${REDIS_HOST}
-      - REDIS_PORT=${REDIS_PORT}
-      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - VALKEY_HOST=${VALKEY_HOST}
+      - VALKEY_PORT=${VALKEY_PORT}
+      - VALKEY_PASSWORD=${VALKEY_PASSWORD}
       - GITHUB_TOKEN=${GITHUB_TOKEN}
       - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN}
     restart: unless-stopped

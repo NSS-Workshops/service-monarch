@@ -1,7 +1,7 @@
 import os
 from typing import List, Dict
 from time import sleep
-import redis
+import valkey
 import structlog
 from tenacity import retry, stop_after_attempt, wait_exponential
 from prometheus_client import start_http_server
@@ -26,11 +26,10 @@ class TicketMigrator:
         self.current_source = None
         self.settings = Settings()
         self.github = GithubRequest()
-        self.redis_client = redis.StrictRedis(
-            host=self.settings.REDIS_HOST,
-            port=self.settings.REDIS_PORT,
-            db=self.settings.REDIS_DB,
-            password=self.settings.REDIS_PASSWORD,
+        self.valkey_client = valkey.Valkey(
+            host=self.settings.VALKEY_HOST,
+            port=self.settings.VALKEY_PORT,
+            db=self.settings.VALKEY_DB,
             decode_responses=True,
         )
         self.metrics = Metrics()
@@ -98,7 +97,7 @@ class TicketMigrator:
             response = self.github.get(url)
             new_issues = response.json()
 
-            if not new_issues:
+            if not new_issues or response.status_code != 200:
                 break
 
             issues.extend(new_issues)
@@ -190,9 +189,9 @@ class TicketMigrator:
 
     async def run(self):
         # Start Prometheus metrics server
-        start_http_server(8000)
+        start_http_server(self.settings.PROMETHEUS_PORT)
 
-        pubsub = self.redis_client.pubsub()
+        pubsub = self.valkey_client.pubsub()
         pubsub.subscribe('channel_migrate_issue_tickets')
         logger.info('Waiting for messages. To exit press CTRL+C')
 

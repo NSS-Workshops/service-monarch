@@ -91,9 +91,9 @@ jobs:
             cat > .env << EOF
             GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}
             SLACK_BOT_TOKEN=${{ secrets.SLACK_BOT_TOKEN }}
-            REDIS_HOST=${{ secrets.REDIS_HOST }}
-            REDIS_PORT=${{ secrets.REDIS_PORT }}
-            REDIS_PASSWORD=${{ secrets.REDIS_PASSWORD }}
+            VALKEY_HOST=${{ secrets.VALKEY_HOST }}
+            VALKEY_PORT=${{ secrets.VALKEY_PORT }}
+            VALKEY_PASSWORD=${{ secrets.VALKEY_PASSWORD }}
             EOF
 
             # Log into registry
