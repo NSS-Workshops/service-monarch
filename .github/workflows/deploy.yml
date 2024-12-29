@@ -60,6 +60,18 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
+      - name: Wait for setup to complete
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.DROPLET_HOST }}
+          username: root
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            while [ ! -f /opt/setup_complete ]; do
+              echo "Waiting for setup to complete..."
+              sleep 5
+            done
+
       - name: Create deployment directory and files on droplet
         uses: appleboy/ssh-action@master
         with:
