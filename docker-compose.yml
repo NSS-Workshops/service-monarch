@@ -1,12 +1,9 @@
-version: '3.8'
-
 services:
   monarch:
-    image: registry.digitalocean.com/your-registry/monarch:latest
+    image: registry.digitalocean.com/${DOCKER_REGISTRY}/monarch:latest
     environment:
       - VALKEY_HOST=${VALKEY_HOST}
-      - VALKEY_PORT=${VALKEY_PORT}
-      - VALKEY_PASSWORD=${VALKEY_PASSWORD}
-      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - VALKEY_PORT=${VALKEY_PORT}  # Default Valkey port
+      - GITHUB_TOKEN=${GH_PAT}
       - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN}
     restart: unless-stopped

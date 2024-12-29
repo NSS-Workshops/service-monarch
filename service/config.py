@@ -4,12 +4,11 @@ from pydantic import BaseModel, HttpUrl
 
 class Settings(BaseModel):
     """ Configuration settings for the Monarch service """
-    VALKEY_HOST: str = "localhost"
+    VALKEY_HOST: str = os.getenv("VALKEY_HOST", "localhost")
     VALKEY_PORT: int = 6379
     VALKEY_DB: int = 0
-    VALKEY_PASSWORD: str = os.getenv("VALKEY_PASSWORD", "")
     GITHUB_API_URL: HttpUrl = "https://api.github.com"
-    GITHUB_TOKEN: str = os.getenv("GITHUB_PAT")
+    GITHUB_TOKEN: str = os.getenv("GH_PAT")
     GITHUB_RATE_LIMIT_PAUSE: int = 5
     REPO_MIGRATION_PAUSE: int = 300
     PROMETHEUS_PORT: int = 8080
