@@ -66,7 +66,7 @@ for message in pubsub.listen():
     ```
     or start the project in debug mode in your code editor.
 
-## Testing with Valkey CLI
+## Testing Locally with Valkey CLI
 
 To test the Monarch service using `valkey-cli`, follow these steps:
 
@@ -75,9 +75,11 @@ To test the Monarch service using `valkey-cli`, follow these steps:
     brew services start valkey
     ```
 
+    On a Linux machine, I recommend that you run the Docker container.
+
 2. Open a new terminal and connect to Valkey CLI:
     ```sh
-    valkey-client
+    valkey-cli
     ```
 
 3. Publish a test message:
@@ -117,6 +119,10 @@ sequenceDiagram
         Monarch->>Log: Migration skipped
     end
 ```
+
+## Deployment
+
+For a detailed description of how the Monarch service is deployed, refer to the [WORKFLOW](./WORKFLOW.md) document.
 
 ## License
 This project is licensed under the GNU GENERAL PUBLIC LICENSE.
