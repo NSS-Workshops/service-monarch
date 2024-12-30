@@ -44,8 +44,8 @@ for message in pubsub.listen():
 ## Installation
 1. Clone the repository:
     ```sh
-    git clone https://github.com/stevebrownlee/learning-platform.git
-    cd learning-platform/services/monarch
+    git clone git@github.com:stevebrownlee/service-monarch.git
+    cd service-monarch
     ```
 
 2. Install the required Python packages using `pipenv`:
@@ -58,7 +58,7 @@ for message in pubsub.listen():
     pipenv shell
     ```
 4. Open the project with your code editor.
-5. Ensure Redis is installed.
+5. Ensure Valkey is installed.
 6. Run the service in the terminal
     ```sh
     cd monarch
@@ -70,12 +70,12 @@ for message in pubsub.listen():
 
 To test the Monarch service using `valkey-cli`, follow these steps:
 
-1. Start the Redis server on Mac:
+1. Start the Valkey server on Mac:
     ```sh
     brew services start valkey
     ```
 
-2. Open a new terminal and connect to Redis CLI:
+2. Open a new terminal and connect to Valkey CLI:
     ```sh
     valkey-client
     ```
