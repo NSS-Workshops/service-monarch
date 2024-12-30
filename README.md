@@ -42,24 +42,27 @@ for message in pubsub.listen():
 - [tenacity](https://tenacity.readthedocs.io/en/latest/) for HTTP request retrying
 
 ## Installation
-1. Clone the repository:
+
+1. Ensure Valkey is installed on your system.
+2. Clone the repository:
     ```sh
     git clone git@github.com:stevebrownlee/service-monarch.git
     cd service-monarch
     ```
 
-2. Install the required Python packages using `pipenv`:
+3. Install the required Python packages using `pipenv`:
     ```sh
     pipenv install
     ```
 
-3. Start the shell for the project using `pipenv`:
+4. Start the shell for the project using `pipenv`:
     ```sh
     pipenv shell
     ```
-4. Open the project with your code editor.
-5. Ensure Valkey is installed.
-6. Run the service in the terminal
+5. Open the project with your code editor.
+6. Copy the `.env.template` file as `.env`.
+7. Update the `.env` file with the appropriate values as you generate them.
+8. Run the service in the terminal
     ```sh
     cd monarch
     python main.py
