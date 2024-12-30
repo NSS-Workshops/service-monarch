@@ -101,8 +101,11 @@ jobs:
 
             # Create or update .env file
             cat > .env << EOF
-            GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}
+            GH_PAT=${{ secrets.GH_PAT }}
             SLACK_BOT_TOKEN=${{ secrets.SLACK_BOT_TOKEN }}
+            VALKEY_HOST=${{ secrets.VALKEY_HOST }}
+            VALKEY_PORT=${{ secrets.VALKEY_PORT }}
+            DOCKER_REGISTRY=${{ secrets.DOCKER_REGISTRY }}
             EOF
 
             # Log into registry
