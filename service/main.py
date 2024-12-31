@@ -1,3 +1,4 @@
+""" Main service to migrate issues from one repository to multiple repositories """
 import os
 from typing import List, Dict
 from time import sleep
@@ -22,6 +23,7 @@ structlog.configure(
 logger = structlog.get_logger()
 
 class TicketMigrator:
+    """ Service to migrate issues from one repository to multiple repositories """
     def __init__(self):
         self.current_source = None
         self.settings = Settings()
