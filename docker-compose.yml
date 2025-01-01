@@ -4,6 +4,6 @@ services:
     environment:
       - VALKEY_HOST=${VALKEY_HOST}
       - VALKEY_PORT=${VALKEY_PORT}  # Default Valkey port
-      - GITHUB_TOKEN=${GH_PAT}
+      - GH_PAT=${GH_PAT}
       - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN}
     restart: unless-stopped
