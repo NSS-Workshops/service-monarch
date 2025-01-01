@@ -127,6 +127,33 @@ sequenceDiagram
 
 For a detailed description of how the Monarch service is deployed, refer to the [WORKFLOW](./WORKFLOW.md) document.
 
+## Monitoring Production
+
+### Monarch
+
+For now, you can...
+
+1. `ssh root@monarch.nss.team`
+2. `cd /opt/monarch`
+3. `docker compose logs -f`
+
+This will allow you to view the logs as the service operates.
+
+### Valkey
+
+To enable this, modify the inbound rule on the Valkey droplet in the Terraform config file.
+
+```tf
+inbound_rule {
+ protocol = "tcp"
+ port_range = "6379"
+ source_addresses = ["0.0.0.0/0", "::/0"]
+}
+```
+
+1. `valkey-cli -h switchboard.nss.team -p 6379`
+2. Once connected, run the **MONITOR** command to watch all activity.
+
 ## License
 This project is licensed under the GNU GENERAL PUBLIC LICENSE.
 
