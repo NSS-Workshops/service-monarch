@@ -13,6 +13,8 @@ class GithubRequest(object):
         self.session: requests.Session = requests.Session()
         self.settings: Settings = Settings()
 
+        logger.info("application.info", settings=self.settings.model_dump_json())
+
         self.session.headers.update({
             "Content-Type": "application/json",
             "Accept": "application/vnd.github+json",
