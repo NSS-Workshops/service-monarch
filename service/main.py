@@ -98,6 +98,11 @@ class TicketMigrator:
 
             response = self.github.get(url)
             new_issues = response.json()
+            logger.info(
+                "github.response",
+                issues=new_issues,
+                status=response.status_code
+            )
 
             if not new_issues or response.status_code != 200:
                 break
