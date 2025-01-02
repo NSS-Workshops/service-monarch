@@ -93,34 +93,26 @@ To test the Monarch service using `valkey-cli`, follow these steps:
 ## Sequence/System Diagram
 
 ```mermaid
-sequenceDiagram
-    participant API as Django API
-    participant Valkey
-    participant Monarch
-    participant GitHub
-    participant Slack
-    participant Log
+zenuml
+title Issue Migration Flow
 
-    API->>Valkey: Publish migration request
-    Note over API,Valkey: Source/target repos + Slack channel
+API -> Valkey.publish(migrate)
+Valkey -> Monarch.subscribe(migrate) {
+    List issues = Github.GET(source_repo) {
+        return
+    }
 
-    Valkey->>Monarch: Receive message
-
-    Monarch->>GitHub: Query source repo for issues
-    GitHub-->>Monarch: Return list of issues
-
-    alt Has issues to migrate
-        loop All target repositories
-           loop All issues tickets
-           Monarch->>GitHub: Migrate issue to target repo
-           GitHub-->>Monarch: HTTP Response
-           Monarch->>Log: Issue has been migrated
-           end
-        end
-        Monarch->>Slack: Send success notification
-    else No issues found
-        Monarch->>Log: Migration skipped
-    end
+    if (issues_exist) {
+        loop (issueTickets) {
+            Issues new_issue = new Issue(source_issue)
+            Github.POST(new_issue)
+            Log.info(Migration successful)
+        }
+        Slack.notify(success)
+    } else {
+        Log.info(Migration skipped)
+    }
+}
 ```
 
 ## Deployment
