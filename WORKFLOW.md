@@ -2,6 +2,56 @@
 
 This document explains how our GitHub Actions workflow automatically deploys the Monarch service when changes are pushed to the main branch.
 
+```mermaid
+sequenceDiagram
+    participant Dev as Developer
+    participant GH as GitHub
+    participant Runner as GitHub Actions Runner
+    participant DO as Digital Ocean Registry
+    participant Droplet as Monarch
+    participant Slack as Slack
+
+    Dev->>GH: Push to main branch
+    Note over GH: Check for changes in monitored files<br/>(*.py, Dockerfile, docker-compose.yml,<br/>workflows, requirements.txt)
+
+    GH->>Runner: Trigger workflow
+
+    rect rgb(200, 230, 200)
+        Note over Runner: Step 1: Testing
+        Runner->>Runner: Setup Linux environment
+        Runner->>Runner: Install Python 3.11
+        Runner->>Runner: Install dependencies
+        Runner->>Runner: Run pytest
+    end
+
+    rect rgb(200, 220, 240)
+        Note over Runner: Step 2: Docker Build & Push
+        Runner->>Runner: Build Docker image
+        Runner->>Runner: Tag with SHA & latest
+        Runner->>DO: Login to container registry
+        Runner->>DO: Push Docker images
+    end
+
+    rect rgb(230, 220, 200)
+        Note over Runner: Step 3: Deployment
+        Runner->>Droplet: Check for /opt/setup_complete
+        Runner->>Droplet: Create /opt/monarch directory
+        Runner->>Droplet: Copy docker-compose.yml
+        Runner->>Droplet: Create .env file
+        Runner->>DO: Login to registry on droplet
+        Runner->>Droplet: Pull & start new image
+        Runner->>Droplet: Clean up old images
+    end
+
+    alt Deployment Success
+        Runner->>Slack: Send success notification
+    else Deployment Failure
+        Runner->>Slack: Send failure notification
+    end
+
+    Note over Slack: Include deployment details<br/>(who, when, status)
+```
+
 ## When Does This Run?
 The workflow starts automatically when someone pushes changes to these files:
 - Any Python files (`**.py`)
