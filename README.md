@@ -93,26 +93,26 @@ To test the Monarch service using `valkey-cli`, follow these steps:
 ## Sequence/System Diagram
 
 ```mermaid
-zenuml
-   title Issue Migration Flow
+sequenceDiagram
+    title Learning Platform Ticket Migration
 
-   API -> Valkey.publish(migrate)
-   Valkey -> Monarch.subscribe(migrate) {
-       List issues = Github.GET(source_repo) {
-           return
-       }
-
-       if (issues_exist) {
-           loop (issueTickets) {
-               Issues new_issue = new Issue(source_issue)
-               Github.POST(new_issue)
-               Log.info(Migration successful)
-           }
-           Slack.notify(success)
-       } else {
-           Log.info(Migration skipped)
-       }
-   }
+    API->>Switchboard: PUBLISH {payload}
+    Switchboard->>+Monarch: RECEIVE {payload}
+    activate Monarch
+        Monarch->>+Github: GET /issues
+        Github-->>-Monarch: List<Issue>
+        opt If issues exist
+            critical [Create issues on target repo]
+            loop List of issues
+                Monarch->>+Github: POST issue
+                Github->>-Monarch: JSON
+            end
+            Monarch->>Slack: Migration success
+            option [Exception]
+                Monarch->>Slack: Migration failed
+            end
+        end
+    deactivate Monarch
 ```
 
 ## Deployment
