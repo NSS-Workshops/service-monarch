@@ -3,7 +3,7 @@ services:
     image: registry.digitalocean.com/${DOCKER_REGISTRY}/monarch:latest
     environment:
       - VALKEY_HOST=${VALKEY_HOST}
-      - VALKEY_PORT=${VALKEY_PORT}  # Default Valkey port
+      - VALKEY_PORT=${VALKEY_PORT}
       - GH_PAT=${GH_PAT}
       - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN}
     restart: unless-stopped

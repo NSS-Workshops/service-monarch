@@ -179,8 +179,7 @@ class TicketMigrator:
                     )
 
                 # Pause between repositories
-                # sleep(self.settings.REPO_MIGRATION_PAUSE)
-                sleep(10)
+                sleep(self.settings.REPO_MIGRATION_PAUSE)
 
         except Exception as e:
             logger.error(

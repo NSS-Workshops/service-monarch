@@ -10,13 +10,10 @@ class Settings(BaseModel):
     GITHUB_API_URL: HttpUrl = "https://api.github.com"
     GITHUB_TOKEN: str = os.getenv("GH_PAT")
     GITHUB_RATE_LIMIT_PAUSE: int = 5
-    REPO_MIGRATION_PAUSE: int = 300
+    REPO_MIGRATION_PAUSE: int = 10
     PROMETHEUS_PORT: int = 8080
     TEMPLATE_DIR: str = os.path.dirname(os.path.realpath(__file__))
     SLACK_BOT_TOKEN: str = os.getenv("SLACK_BOT_TOKEN")
 
     class Config:
         env_file = ".env"
-
-# Example usage in redis-cli:
-# PUBLISH channel_migrate_issue_tickets '{ "source_repo": "nss-group-projects/cider-falls", "all_target_repositories": ["stevebrownlee/rare-test"], "notification_channel": "C06GHMZB3M3"}'
