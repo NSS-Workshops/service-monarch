@@ -1,6 +1,8 @@
 services:
   monarch:
     image: registry.digitalocean.com/${DOCKER_REGISTRY}/monarch:latest
+    ports:
+      - "8080:8080"
     environment:
       - VALKEY_HOST=${VALKEY_HOST}
       - VALKEY_PORT=${VALKEY_PORT}

@@ -85,9 +85,9 @@ To test the Monarch service using `valkey-cli`, follow these steps:
     valkey-cli
     ```
 
-3. Publish a test message:
+3. Publish a test message like this one, making sure you provide a real target and source repo:
     ```sh
-    PUBLISH channel_migrate_issue_tickets '{ "source_repo": "nss-group-projects/cider-falls", "all_target_repositories": ["stevebrownlee/rare-test"], "notification_channel": "C06GHMZB3M3"}'
+    PUBLISH channel_migrate_issue_tickets '{ "source_repo": "source-org/source-repo-with-issues", "all_target_repositories": ["target-org/target-repo"], "notification_channel": "C06GHMZB3M3"}'
     ```
 
 ## Sequence/System Diagram
@@ -125,13 +125,15 @@ For a detailed description of how the Monarch service is deployed, refer to the 
 
 For now, you can...
 
-1. `ssh root@monarch.nss.team`
+1. `ssh root@monarch.your.domain`
 2. `cd /opt/monarch`
 3. `docker compose logs -f`
 
 This will allow you to view the logs as the service operates.
 
 ### Valkey
+
+> You will need to clone the [Infrastructure](https://github.com/stevebrownlee/learnops-infrastructure) repo and run `terraform init` and `terraform plan`.
 
 To enable this, modify the inbound rule on the Valkey droplet in the Terraform config file.
 
@@ -142,10 +144,9 @@ inbound_rule {
  source_addresses = ["0.0.0.0/0", "::/0"]
 }
 ```
-
-1. `valkey-cli -h switchboard.nss.team -p 6379`
-2. Once connected, run the **MONITOR** command to watch all activity.
+1. Run `terraform apply` to apply the changes.
+2. Run `valkey-cli -h {your-domain-name} -p 6379` in your local shell.
+3. Once connected, run the **MONITOR** command to watch all activity.
 
 ## License
 This project is licensed under the GNU GENERAL PUBLIC LICENSE.
-
