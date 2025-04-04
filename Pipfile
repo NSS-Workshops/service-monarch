@@ -10,6 +10,7 @@ structlog = "24.4.0"
 prometheus-client = "0.21.1"
 tenacity = "9.0.0"
 valkey = "6.0.2"
+flask = "*"
 
 [dev-packages]
 

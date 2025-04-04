@@ -2,7 +2,8 @@ services:
   monarch:
     image: registry.digitalocean.com/${DOCKER_REGISTRY}/monarch:latest
     ports:
-      - "8080:8080"
+      - "8080:8080"  # Prometheus metrics
+      - "8081:8081"  # Log web interface
     environment:
       - VALKEY_HOST=${VALKEY_HOST}
       - VALKEY_PORT=${VALKEY_PORT}

@@ -9,4 +9,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY service/ .
 
+# Expose ports
+EXPOSE 8080  # Prometheus metrics
+EXPOSE 8081  # Log web interface
+
 CMD ["python", "main.py"]

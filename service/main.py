@@ -1,5 +1,6 @@
 """ Main service to migrate issues from one repository to multiple repositories """
 import os
+import threading
 from typing import List, Dict
 from time import sleep
 import valkey
@@ -7,19 +8,16 @@ import structlog
 from tenacity import retry, stop_after_attempt, wait_exponential
 from prometheus_client import start_http_server
 
+from valkey_log_handler import ValkeyLogHandler
+import log_web_interface
+
 from config import Settings
 from models import IssueTemplate, Issue, MigrationData
 from github_request import GithubRequest
 from slack import SlackAPI
 from metrics import Metrics
 
-# Configure structured logging
-structlog.configure(
-    processors=[
-        structlog.processors.TimeStamper(fmt="iso"),
-        structlog.processors.JSONRenderer()
-    ]
-)
+# Logger instance will be configured after Valkey client is initialized
 logger = structlog.get_logger()
 
 class TicketMigrator:
@@ -28,13 +26,37 @@ class TicketMigrator:
         self.current_source = None
         self.settings = Settings()
         self.github = GithubRequest()
+
+        # Initialize Valkey client
         self.valkey_client = valkey.Valkey(
             host=self.settings.VALKEY_HOST,
             port=self.settings.VALKEY_PORT,
             db=self.settings.VALKEY_DB,
             decode_responses=True,
         )
+
+        # Initialize metrics
         self.metrics = Metrics()
+
+        # Configure structured logging with Valkey handler
+        valkey_log_client = valkey.Valkey(
+            host=self.settings.VALKEY_HOST,
+            port=self.settings.VALKEY_PORT,
+            db=self.settings.VALKEY_DB,
+            decode_responses=False,  # Keep as bytes for log handler
+        )
+        valkey_handler = ValkeyLogHandler(valkey_log_client)
+
+        structlog.configure(
+            processors=[
+                structlog.processors.TimeStamper(fmt="iso"),
+                valkey_handler,  # Add Valkey handler (using __call__ method)
+                structlog.processors.JSONRenderer()
+            ]
+        )
+
+        # Initialize web interface
+        log_web_interface.init_app(valkey_log_client)
 
     def format_issue(self, template_data: IssueTemplate) -> str:
         template_file = os.path.join(self.settings.TEMPLATE_DIR, 'issue.md')
@@ -196,6 +218,15 @@ class TicketMigrator:
     async def run(self):
         # Start Prometheus metrics server
         start_http_server(self.settings.PROMETHEUS_PORT)
+
+        # Start the web interface in a background thread
+        web_thread = threading.Thread(
+            target=log_web_interface.start_web_interface,
+            kwargs={'port': 8081},
+            daemon=True
+        )
+        web_thread.start()
+        logger.info('Started log web interface', port=8081)
 
         pubsub = self.valkey_client.pubsub()
         pubsub.subscribe('channel_migrate_issue_tickets')
