@@ -1,6 +1,7 @@
 from prometheus_client import Counter, Gauge
 
 class Metrics:
+    """"""
     def __init__(self):
         self.issues_migrated = Counter(
             'issues_migrated_total',

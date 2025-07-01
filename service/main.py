@@ -59,8 +59,9 @@ class TicketMigrator:
         log_web_interface.init_app(valkey_log_client)
 
     def format_issue(self, template_data: IssueTemplate) -> str:
+        """ Format the issue using the provided template data. """
         template_file = os.path.join(self.settings.TEMPLATE_DIR, 'issue.md')
-        with open(template_file, 'r') as f:
+        with open(template_file, 'r', encoding='utf-8') as f:
             template = f.read()
 
         return template.format(**template_data.dict())
@@ -74,6 +75,7 @@ class TicketMigrator:
         target_repo: str,
         issue: Issue
     ) -> None:
+        """ Migrate a single issue to the target repository. """
         try:
             url = f'{self.settings.GITHUB_API_URL}/repos/{target_repo}/issues'
             response = self.github.post(url, issue.model_dump())
@@ -111,6 +113,7 @@ class TicketMigrator:
             raise
 
     async def get_source_issues(self, source_repo: str) -> List[Dict]:
+        """ Get all open issues from the source repository. """
         issues = []
         page = 1
 
@@ -139,6 +142,7 @@ class TicketMigrator:
         return issues
 
     async def migrate_tickets(self, data: MigrationData) -> None:
+        """ Migrate tickets from the source repository to the target repositories. """
         slack = SlackAPI()
         self.current_source = data.source_repo
 
@@ -216,6 +220,8 @@ class TicketMigrator:
             raise
 
     async def run(self):
+        """ Run the Monarch service. """
+
         # Start Prometheus metrics server
         start_http_server(self.settings.PROMETHEUS_PORT)
 

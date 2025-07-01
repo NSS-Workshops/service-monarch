@@ -9,6 +9,7 @@ from config import Settings
 logger = structlog.get_logger()
 
 class GithubRequest(object):
+    """ A class to handle GitHub API requests with retry logic and structured logging."""
     def __init__(self) -> None:
         self.session: requests.Session = requests.Session()
         self.settings: Settings = Settings()
@@ -22,6 +23,7 @@ class GithubRequest(object):
         })
 
     def get(self, url: str) -> requests.Response:
+        """ Make a GET request to the specified URL with retry logic."""
         logger.info("github_request.get", url=url)
         return self.request_with_retry(lambda: self.session.get(
             url=url,
@@ -30,6 +32,7 @@ class GithubRequest(object):
         )
 
     def put(self, url: str, data: Dict[str, Any]) -> requests.Response:
+        """ Make a PUT request to the specified URL with retry logic."""
         logger.info("github_request.put", url=url)
         json_data = json.dumps(data)
         return self.request_with_retry(lambda: self.session.put(
@@ -40,6 +43,7 @@ class GithubRequest(object):
         )
 
     def post(self, url: str, data: Dict[str, Any]) -> Optional[requests.Response]:
+        """ Make a POST request to the specified URL with retry logic."""
         logger.info("github_request.post", url=url)
         json_data = json.dumps(data)
 
@@ -61,6 +65,7 @@ class GithubRequest(object):
         return None
 
     def request_with_retry(self, request: Callable[[], requests.Response]) -> requests.Response:
+        """ Retry the request if it fails with a 403 status code."""
         retry_after_seconds: int = 1800
         number_of_retries: int = 0
 
@@ -74,6 +79,7 @@ class GithubRequest(object):
         return response
 
     def sleep_with_countdown(self, countdown_seconds: int) -> None:
+        """ Sleep for the specified number of seconds, with a countdown display."""
         ticks: int = countdown_seconds * 2
         for count in range(ticks, -1, -1):
             if count:
