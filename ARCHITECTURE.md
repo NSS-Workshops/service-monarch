@@ -1,0 +1,426 @@
+# Monarch Service Architecture
+
+This document outlines the architectural patterns and strategies used in the Monarch service, which is responsible for migrating GitHub issues from source repositories to target repositories.
+
+## Table of Contents
+
+- [Monarch Service Architecture](#monarch-service-architecture)
+  - [Table of Contents](#table-of-contents)
+  - [Settings Management](#settings-management)
+  - [Circuit Breaker Pattern](#circuit-breaker-pattern)
+  - [Heartbeat and Watchdog Mechanism](#heartbeat-and-watchdog-mechanism)
+  - [Metrics Publishing](#metrics-publishing)
+  - [Logging Strategy](#logging-strategy)
+  - [Valkey as Message Broker and Log Storage](#valkey-as-message-broker-and-log-storage)
+  - [Resilient Connections](#resilient-connections)
+  - [Graceful Shutdown](#graceful-shutdown)
+  - [Asynchronous Processing](#asynchronous-processing)
+  - [Error Handling and Retries](#error-handling-and-retries)
+  - [Conclusion](#conclusion)
+
+## Settings Management
+
+The Monarch service uses Pydantic's `BaseModel` for configuration management, providing:
+
+- **Type validation** for configuration values
+- **Environment variable integration** with fallback defaults
+- **Centralized configuration** in a single `Settings` class
+- **Environment file support** via `.env` files
+
+```python
+class Settings(BaseModel):
+    VALKEY_HOST: str = os.getenv("VALKEY_HOST", "localhost")
+    VALKEY_PORT: int = 6379
+    VALKEY_DB: int = 0
+    GITHUB_API_URL: HttpUrl = "https://api.github.com"
+    GITHUB_TOKEN: str = os.getenv("GH_PAT")
+    # ... other settings
+
+    class Config:
+        env_file = ".env"
+```
+
+This approach ensures type safety, simplifies configuration management, and provides a clear interface for service settings.
+
+## Circuit Breaker Pattern
+
+The Monarch service implements the Circuit Breaker pattern to prevent cascading failures when external services (like GitHub API) become unavailable:
+
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│   CLOSED    │────▶│   HALF-OPEN │────▶│    OPEN     │
+│  (Normal)   │     │  (Testing)  │     │ (Fast Fail) │
+└─────────────┘     └─────────────┘     └─────────────┘
+       ▲                   │                   │
+       └───────────────────┘                   │
+                ▲                              │
+                └──────────────────────────────┘
+```
+
+Key features:
+- **State Management**: Tracks circuit state (CLOSED, OPEN, HALF-OPEN)
+- **Failure Counting**: Monitors consecutive failures
+- **Automatic Recovery**: Transitions to HALF-OPEN after a timeout period
+- **Thread Safety**: Uses locks to ensure thread-safe state transitions
+- **Metrics Integration**: Reports circuit state to Prometheus metrics
+
+The circuit breaker is used to protect GitHub API calls:
+
+```python
+self.github_circuit = CircuitBreaker("github_api")
+# ...
+try:
+    return self.github_circuit.execute(func, *args, **kwargs)
+except CircuitBreakerOpenError as e:
+    logger.error("GitHub API circuit breaker open", error=str(e))
+    self.metrics.circuit_breaker_state.labels(circuit_name="github_api").set(1)
+    raise Exception(f"GitHub API unavailable: {str(e)}")
+```
+
+This pattern improves system resilience by failing fast when external dependencies are unavailable, preventing resource exhaustion and allowing for graceful degradation.
+
+## Heartbeat and Watchdog Mechanism
+
+The Monarch service implements a watchdog pattern to monitor service health and automatically recover from failures:
+
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│  Heartbeat  │────▶│  Watchdog   │────▶│  Recovery   │
+│  Generator  │     │   Monitor   │     │   Actions   │
+└─────────────┘     └─────────────┘     └─────────────┘
+```
+
+Key components:
+- **Heartbeat Generation**: Regular signals indicating service health
+- **Health Monitoring**: Watchdog thread that checks for missed heartbeats
+- **Recovery Actions**: Callbacks triggered when health issues are detected
+- **External Visibility**: Heartbeats stored in Valkey for external monitoring
+
+Implementation:
+```python
+# Initialize watchdog
+self.watchdog = ServiceWatchdog(check_interval=30, max_missed_checks=3)
+self.watchdog.register_valkey_client(self.valkey_client)
+
+# Register recovery callback
+def recovery_callback():
+    # Reinitialize pubsub connection
+    # ...
+self.watchdog.register_recovery_callback(recovery_callback)
+
+# Start sending heartbeats
+def heartbeat_task():
+    while True:
+        try:
+            self.watchdog.heartbeat()
+            time.sleep(30)  # Send heartbeat every 30 seconds
+        except Exception as e:
+            logger.error("Error in heartbeat task", error=str(e))
+            time.sleep(5)
+```
+
+This pattern ensures the service can detect and recover from various failure modes, improving overall reliability.
+
+## Metrics Publishing
+
+The Monarch service uses Prometheus for metrics collection and exposure:
+
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│   Service   │────▶│  Prometheus │────▶│   Metrics   │
+│    Code     │     │   Client    │     │   Server    │
+└─────────────┘     └─────────────┘     └─────────────┘
+```
+
+Key metrics categories:
+- **Operational Metrics**: Issues migrated, errors encountered
+- **External Dependencies**: GitHub API rate limits
+- **Connection Status**: Valkey connection health
+- **Performance Metrics**: Message processing time
+- **Circuit Breaker State**: Circuit state and failure counts
+- **Watchdog Metrics**: Missed heartbeats and recovery attempts
+
+Implementation:
+```python
+# Initialize metrics
+self.metrics = Metrics()
+
+# Start Prometheus metrics server
+start_http_server(self.settings.PROMETHEUS_PORT)
+
+# Use metrics in code
+self.metrics.issues_migrated.labels(
+    source_repo=self.current_source,
+    target_repo=target_repo
+).inc()
+```
+
+The metrics are exposed on port 8080 and can be scraped by Prometheus for monitoring and alerting.
+
+## Logging Strategy
+
+The Monarch service implements a sophisticated logging strategy using structured logging and persistent storage:
+
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│  Structlog  │────▶│ Valkey Log  │────▶│   Valkey    │
+│  Generator  │     │   Handler   │     │   Storage   │
+└─────────────┘     └─────────────┘     └─────────────┘
+                                             │
+                                             ▼
+                                        ┌─────────────┐
+                                        │    Web      │
+                                        │  Interface  │
+                                        └─────────────┘
+```
+
+Key features:
+- **Structured Logging**: JSON-formatted logs with consistent fields
+- **Persistent Storage**: Logs stored in Valkey Redis Streams
+- **Automatic Rotation**: Daily log streams with 30-day retention
+- **Indexing**: Efficient retrieval by timestamp, level, and service
+- **Web Interface**: Browser-based log viewer and search
+
+Implementation:
+```python
+# Configure structured logging with Valkey handler
+valkey_log_client = valkey.Valkey(
+    host=self.settings.VALKEY_HOST,
+    port=self.settings.VALKEY_PORT,
+    db=self.settings.VALKEY_DB,
+    decode_responses=False,  # Keep as bytes for log handler
+)
+valkey_handler = ValkeyLogHandler(valkey_log_client)
+
+structlog.configure(
+    processors=[
+        structlog.processors.TimeStamper(fmt="iso"),
+        valkey_handler,  # Add Valkey handler
+        structlog.processors.JSONRenderer()
+    ]
+)
+```
+
+The web interface provides a user-friendly way to browse, filter, and search logs, accessible at http://localhost:8081/.
+
+## Valkey as Message Broker and Log Storage
+
+The Monarch service uses Valkey (Redis-compatible) for multiple purposes:
+
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│   Message   │────▶│    Valkey   │────▶│  Subscriber │
+│  Publisher  │     │    Broker   │     │   Service   │
+└─────────────┘     └─────────────┘     └─────────────┘
+                         │
+                         ▼
+                    ┌─────────────┐
+                    │     Log     │
+                    │   Storage   │
+                    └─────────────┘
+```
+
+Key uses:
+- **Message Broker**: PubSub for receiving migration requests
+- **Log Storage**: Redis Streams for persistent logging
+- **Health Monitoring**: Storing heartbeat and status information
+- **Service Discovery**: Potential use for service registration
+
+Implementation:
+```python
+# Initialize resilient Valkey client
+self.valkey_client = ResilientValkeyClient(
+    host=self.settings.VALKEY_HOST,
+    port=self.settings.VALKEY_PORT,
+    db=self.settings.VALKEY_DB
+)
+
+# Create and start the resilient PubSub
+self.pubsub = ResilientPubSub(
+    valkey_client=self.valkey_client,
+    channel='channel_migrate_issue_tickets',
+    message_handler=message_handler
+)
+pubsub_thread = self.pubsub.start()
+```
+
+This multi-purpose use of Valkey simplifies the infrastructure requirements while providing robust messaging and storage capabilities.
+
+## Resilient Connections
+
+The Monarch service implements resilient connection patterns for external dependencies:
+
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│  Connection │────▶│ Auto-Retry  │────▶│Health Check │
+│    Wrapper  │     │    Logic    │     │   Thread    │
+└─────────────┘     └─────────────┘     └─────────────┘
+```
+
+Key features:
+- **Automatic Reconnection**: Retry logic for connection failures
+- **Health Checking**: Background threads monitoring connection health
+- **Exponential Backoff**: Increasing delays between retry attempts
+- **Connection Pooling**: Efficient connection management
+- **Socket Options**: TCP keepalive for detecting stale connections
+
+Implementation for Valkey:
+```python
+class ResilientValkeyClient:
+    def __init__(self, host, port, db, max_retries=10, retry_interval=5):
+        # ...
+        self.client = self._connect()
+        self._start_health_check()
+
+    def _connect(self):
+        for attempt in range(self.max_retries):
+            try:
+                client = valkey.Valkey(
+                    # ... connection parameters
+                    socket_keepalive=True,
+                    socket_keepalive_options={
+                        socket.TCP_KEEPINTVL: 30,
+                        socket.TCP_KEEPCNT: 3
+                    },
+                    health_check_interval=15,
+                    retry_on_timeout=True
+                )
+                # Test connection
+                client.ping()
+                return client
+            except Exception as e:
+                # ... retry logic
+```
+
+Similar patterns are used for PubSub connections, ensuring robust communication even in the face of network issues or service restarts.
+
+## Graceful Shutdown
+
+The Monarch service implements graceful shutdown handling:
+
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│   Signal    │────▶│  Shutdown   │────▶│ Connection  │
+│  Handlers   │     │   Handler   │     │   Cleanup   │
+└─────────────┘     └─────────────┘     └─────────────┘
+```
+
+Key features:
+- **Signal Handling**: Captures SIGTERM and SIGINT signals
+- **Task Completion**: Waits for in-progress tasks to complete
+- **Resource Cleanup**: Properly closes connections and releases resources
+- **Logging**: Records shutdown process for diagnostics
+
+Implementation:
+```python
+# Register signal handlers for graceful shutdown
+signal.signal(signal.SIGTERM, self._graceful_shutdown)
+signal.signal(signal.SIGINT, self._graceful_shutdown)
+
+def _graceful_shutdown(self, signum, frame):
+    """Handle shutdown signals gracefully"""
+    logger.info("Received shutdown signal, stopping service gracefully")
+
+    # Stop accepting new messages
+    if self.pubsub:
+        try:
+            self.pubsub.stop()
+        except Exception as e:
+            logger.error("Error stopping pubsub", error=str(e))
+
+    # Wait for in-progress tasks to complete
+    logger.info("Shutting down thread pool")
+    self.executor.shutdown(wait=True)
+
+    # Close connections
+    try:
+        self.valkey_client.client.close()
+    except Exception as e:
+        logger.error("Error closing Valkey connection", error=str(e))
+
+    logger.info("Service shutdown complete")
+    sys.exit(0)
+```
+
+This pattern ensures that the service can be safely stopped without losing in-progress work or corrupting data.
+
+## Asynchronous Processing
+
+The Monarch service uses asynchronous processing patterns for handling messages:
+
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│   Message   │────▶│Thread Pool  │────▶│  Async      │
+│  Receiver   │     │  Executor   │     │  Functions  │
+└─────────────┘     └─────────────┘     └─────────────┘
+```
+
+Key features:
+- **Thread Pool**: Concurrent processing of messages
+- **Non-blocking I/O**: Asynchronous HTTP requests
+- **Message Queuing**: Buffering of incoming messages
+- **Backpressure Handling**: Managing load during high traffic
+
+Implementation:
+```python
+# Initialize thread pool
+self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=5)
+
+# Process message with metrics
+with self.metrics.message_processing_time.time():
+    try:
+        data = MigrationData.model_validate_json(message['data'])
+        # Use executor to process message asynchronously
+        self.executor.submit(self._run_async_process, data)
+    except Exception as e:
+        self.metrics.message_processing_errors.inc()
+        logger.error("Error processing message", error=str(e))
+```
+
+This pattern improves throughput and responsiveness, allowing the service to handle multiple migration requests concurrently.
+
+## Error Handling and Retries
+
+The Monarch service implements comprehensive error handling and retry strategies:
+
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│   Error     │────▶│   Retry     │────▶│  Fallback   │
+│  Detection  │     │  Strategy   │     │   Actions   │
+└─────────────┘     └─────────────┘     └─────────────┘
+```
+
+Key features:
+- **Retry Decorators**: Using the tenacity library for automatic retries
+- **Exponential Backoff**: Increasing delays between retry attempts
+- **Circuit Breaking**: Preventing retries when services are down
+- **Error Logging**: Comprehensive error reporting
+- **Fallback Mechanisms**: Graceful degradation when operations fail
+
+Implementation:
+```python
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=4, max=10)
+)
+async def migrate_single_issue(
+    self,
+    target_repo: str,
+    issue: Issue
+) -> None:
+    # ... implementation with error handling
+```
+
+This pattern improves reliability by automatically recovering from transient failures and providing clear diagnostics for persistent issues.
+
+## Conclusion
+
+The Monarch service architecture demonstrates several modern software design patterns that contribute to its reliability, scalability, and maintainability:
+
+- **Resilience Patterns**: Circuit breakers, watchdogs, and retry mechanisms
+- **Observability**: Comprehensive logging, metrics, and monitoring
+- **Resource Management**: Connection pooling and graceful shutdown
+- **Concurrency**: Asynchronous processing and thread safety
+- **Configuration**: Type-safe settings with environment integration
+
+These patterns work together to create a robust service capable of reliably migrating GitHub issues even in the face of network issues, service outages, or other operational challenges.

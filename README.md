@@ -43,8 +43,8 @@ for message in pubsub.listen():
 
 ## Installation
 
-1. Ensure Valkey is installed on your system.
-2. Clone the repository:
+1. Ensure Valkey is installed on your system by visiting the [Valkey Installation](https://valkey.io/topics/installation/) documentation.
+2. Clone the Monarch repository:
     ```sh
     git clone git@github.com:stevebrownlee/service-monarch.git
     cd service-monarch
@@ -73,21 +73,19 @@ for message in pubsub.listen():
 
 To test the Monarch service using `valkey-cli`, follow these steps:
 
-1. Start the Valkey server on Mac:
-    ```sh
-    brew services start valkey
-    ```
-
-    On a Linux machine, I recommend that you run the Docker container.
-
+1. Start the Valkey server _(refer back to Valkey site for instructions)_.
 2. Open a new terminal and connect to Valkey CLI:
     ```sh
     valkey-cli
     ```
-
-3. Publish a test message like this one, making sure you provide a real target and source repo:
+3. Run the **MONITOR** command, which will observe all activity.
+4. In a separate terminal, send a test message to verify Valkey is working correctly:
     ```sh
-    PUBLISH channel_migrate_issue_tickets '{ "source_repo": "source-org/source-repo-with-issues", "all_target_repositories": ["target-org/target-repo"], "notification_channel": "C06GHMZB3M3"}'
+    valkey-cli PUBLISH test-channel "Hello World"
+    ```
+5. To quickly test the Monarch service, public the following message, replacing the source and target repository endpoints:
+    ```sh
+    valkey-cli PUBLISH channel_migrate_issue_tickets '{ "source_repo": "source-org/source-repo-with-issues", "all_target_repositories": ["target-org/target-repo"], "notification_channel": "C06GHMZB3M3"}'
     ```
 
 ## Sequence/System Diagram
@@ -123,13 +121,40 @@ For a detailed description of how the Monarch service is deployed, refer to the 
 
 ### Monarch
 
-For now, you can...
+#### Viewing Logs
 
-1. `ssh root@monarch.your.domain`
-2. `cd /opt/monarch`
-3. `docker compose logs -f`
+You can view logs in two ways:
 
-This will allow you to view the logs as the service operates.
+1. **Web Interface**:
+   - Access the log viewer web interface at: http://localhost:8081/
+   - This provides a user-friendly interface to browse, filter, and search logs
+
+2. **Direct Server Access**:
+   - `ssh root@monarch.your.domain`
+   - `cd /opt/monarch`
+   - `docker compose logs -f`
+
+#### Health Check
+
+Monitor the service health status:
+- Access the health endpoint at: http://localhost:8081/health
+- Returns a JSON response with status information including:
+  - Overall service status (healthy/degraded/unhealthy)
+  - Valkey connection status
+  - Last message processing time
+  - Service uptime
+
+#### Metrics
+
+View Prometheus metrics for monitoring service performance:
+- Access metrics at: http://localhost:8080/
+- Available metrics include:
+  - Issue migration counts and errors
+  - GitHub API rate limit status
+  - Message processing times and errors
+  - Connection status
+  - Circuit breaker states
+  - Watchdog statistics
 
 ### Valkey
 
@@ -147,6 +172,10 @@ inbound_rule {
 1. Run `terraform apply` to apply the changes.
 2. Run `valkey-cli -h {your-domain-name} -p 6379` in your local shell.
 3. Once connected, run the **MONITOR** command to watch all activity.
+
+## Architecture
+
+For a detailed explanation of the architectural patterns and strategies used in the Monarch service, refer to the [ARCHITECTURE.md](./ARCHITECTURE.md) document.
 
 ## License
 This project is licensed under the GNU GENERAL PUBLIC LICENSE.
