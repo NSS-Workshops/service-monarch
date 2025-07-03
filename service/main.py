@@ -88,12 +88,20 @@ class TicketMigrator:
         # Initialize migration state manager and sliding window controller
         self.migration_state_manager = MigrationStateManager(self.valkey_client)
 
-        # Initialize sliding window controller
+        # Initialize sliding window controller with adaptive polling
+        # This reduces the frequency of Valkey SMEMBERS calls by:
+        # 1. Using a longer polling interval (3-10 seconds instead of 0.1 seconds)
+        # 2. Dynamically adjusting the interval based on migration activity
+        # 3. Skipping database queries entirely when the window is full
+        # 4. Entering idle mode with zero polling when no migrations are pending or in-flight
         self.window_controller = SlidingWindowController(
             state_manager=self.migration_state_manager,
             process_func=self._process_single_migration,
             initial_window_size=5,
-            retry_interval=self.settings.GITHUB_RATE_LIMIT_PAUSE * 2
+            retry_interval=self.settings.GITHUB_RATE_LIMIT_PAUSE * 2,
+            min_poll_interval=3.0,  # Start with 3 second polling interval (30x less frequent than before)
+            max_poll_interval=10.0   # Maximum 10 second polling interval when system is idle (100x less frequent)
+            # Note: When completely idle (no pending or in-flight migrations), polling stops entirely
         )
 
         self.window_controller.start()

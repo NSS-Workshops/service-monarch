@@ -16,6 +16,8 @@ This document outlines the architectural patterns and strategies used in the Mon
   - [Graceful Shutdown](#graceful-shutdown)
   - [Asynchronous Processing](#asynchronous-processing)
   - [Error Handling and Retries](#error-handling-and-retries)
+  - [Sliding Window Pattern](#sliding-window-pattern)
+    - [Polling Optimization](#polling-optimization)
   - [Conclusion](#conclusion)
 
 ## Settings Management
@@ -412,6 +414,77 @@ async def migrate_single_issue(
 ```
 
 This pattern improves reliability by automatically recovering from transient failures and providing clear diagnostics for persistent issues.
+
+## Sliding Window Pattern
+
+The Monarch service implements a sliding window pattern for reliable and efficient GitHub issue migration:
+
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│   Pending   │────▶│  In-Flight  │────▶│  Completed  │
+│ Migrations  │     │ Migrations  │     │ Migrations  │
+└─────────────┘     └─────────────┘     └─────────────┘
+       │                  │                    │
+       │                  │                    │
+       ▼                  ▼                    ▼
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│   Window    │────▶│ Concurrency │────▶│ Completion  │
+│  Controller │     │   Control   │     │  Detection  │
+└─────────────┘     └─────────────┘     └─────────────┘
+```
+
+Key features:
+
+- **State Tracking**: Each migration has a state (pending, in-flight, completed, failed) persisted in Valkey
+- **Controlled Concurrency**: Limits the number of concurrent migrations to prevent overwhelming the GitHub API
+- **Dynamic Window Sizing**: TCP-like congestion control that adjusts window size based on success/failure rates
+- **Completion Detection**: Monitors migration status and sends notifications when all migrations for a target repository are complete
+- **Recovery Mechanism**: Handles in-progress migrations during service restarts
+- **Adaptive Polling**: Dynamically adjusts polling frequency based on migration activity
+- **Idle Mode**: Completely stops polling when no migrations are pending or in-flight
+
+Implementation:
+
+```python
+# Initialize migration state manager and sliding window controller
+self.migration_state_manager = MigrationStateManager(self.valkey_client)
+
+self.window_controller = SlidingWindowController(
+    state_manager=self.migration_state_manager,
+    process_func=self._process_single_migration,
+    initial_window_size=5,
+    retry_interval=self.settings.GITHUB_RATE_LIMIT_PAUSE * 2,
+    min_poll_interval=3.0,  # Start with 3 second polling interval
+    max_poll_interval=10.0  # Maximum 10 second polling interval when system is idle
+)
+
+# Start the controller
+self.window_controller.start()
+
+# Add migrations to the window
+for issue in issues_to_migrate:
+    migration_state = MigrationState(
+        sequence_id=self.migration_state_manager.get_next_sequence_id(),
+        source_repo=data.source_repo,
+        target_repo=target,
+        issue_id=issue_id,
+        issue_data=issue.model_dump(),
+        status=MigrationStatus.PENDING
+    )
+    self.window_controller.add_migration(migration_state)
+```
+
+### Polling Optimization
+
+The sliding window controller implements several optimizations to reduce the frequency of Valkey queries:
+
+1. **Adaptive Polling**: Dynamically adjusts polling intervals (3-10 seconds) based on migration activity
+2. **Conditional Checking**: Skips queries entirely when the processing window is full
+3. **Idle Mode**: Completely stops polling when no migrations are pending or in-flight
+
+The idle mode feature uses a condition variable to pause both the window processor and retry processor threads when the system is inactive, eliminating all unnecessary database queries. The controller wakes up immediately when a new migration is added, ensuring responsiveness while minimizing database load.
+
+This pattern is particularly useful for operations that interact with rate-limited external APIs (like GitHub) or services with potential availability issues, providing resilience, flow control, and efficient resource utilization.
 
 ## Conclusion
 

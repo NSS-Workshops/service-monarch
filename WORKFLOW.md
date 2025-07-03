@@ -105,7 +105,7 @@ The workflow needs these secrets set up in GitHub:
 
 - `DROPLET_HOST`: IP address of our Digital Ocean droplet
 - `SSH_PRIVATE_KEY`: For accessing the droplet
-- `DIGITALOCEAN_ACCESS_TOKEN`: For accessing DO services
+- `DIGITALOCEAN_ACCESS_TOKEN`: Your Digital Ocean API access token
 - `DOCKER_REGISTRY`: Name of our container registry
 - `DOCKER_USERNAME` and `DOCKER_PASSWORD`: For registry access
 - `GH_PAT`: GitHub Personal Access Token
