@@ -1,7 +1,7 @@
 """Migration State Manager"""
 from typing import List, Optional
 import structlog
-from models import MigrationState, MigrationStatus
+from service.models.models import MigrationState, MigrationStatus
 
 logger = structlog.get_logger()
 

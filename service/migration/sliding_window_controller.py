@@ -6,8 +6,8 @@ from datetime import datetime, timedelta
 from typing import Callable
 import structlog
 
-from models import MigrationState, MigrationStatus
-from migration_state_manager import MigrationStateManager
+from service.models.models import MigrationState, MigrationStatus
+from service.migration.state_manager import MigrationStateManager
 
 logger = structlog.get_logger()
 

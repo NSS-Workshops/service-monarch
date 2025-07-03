@@ -83,10 +83,16 @@ To test the Monarch service using `valkey-cli`, follow these steps:
     ```sh
     valkey-cli PUBLISH test-channel "Hello World"
     ```
-5. To quickly test the Monarch service, public the following message, replacing the source and target repository endpoints:
+5. Start the Monarch service in debug mode in VSCode.
+6. Publish the following message to Valkey, replacing the source and target repository endpoints:
     ```sh
     valkey-cli PUBLISH channel_migrate_issue_tickets '{ "source_repo": "source-org/source-repo-with-issues", "all_target_repositories": ["target-org/target-repo"], "notification_channel": "C06GHMZB3M3"}'
     ```
+7. You can watch both the Valkey terminal window to see the messaging, and the terminal output in VSCode as the tickets are migrated.
+8. Review the metrics and public logs:
+   - Access the log viewer web interface at: http://localhost:8081/
+   - Access the health endpoint at: http://localhost:8081/health
+   - Access metrics at: http://localhost:8080/
 
 ## Sequence/System Diagram
 
@@ -126,7 +132,7 @@ For a detailed description of how the Monarch service is deployed, refer to the 
 You can view logs in two ways:
 
 1. **Web Interface**:
-   - Access the log viewer web interface at: http://localhost:8081/
+   - Access the log viewer web interface at: http://{domain}:8081/
    - This provides a user-friendly interface to browse, filter, and search logs
 
 2. **Direct Server Access**:
@@ -137,7 +143,7 @@ You can view logs in two ways:
 #### Health Check
 
 Monitor the service health status:
-- Access the health endpoint at: http://localhost:8081/health
+- Access the health endpoint at: http://{domain}:8081/health
 - Returns a JSON response with status information including:
   - Overall service status (healthy/degraded/unhealthy)
   - Valkey connection status
@@ -147,7 +153,7 @@ Monitor the service health status:
 #### Metrics
 
 View Prometheus metrics for monitoring service performance:
-- Access metrics at: http://localhost:8080/
+- Access metrics at: http://{domain}:8080/
 - Available metrics include:
   - Issue migration counts and errors
   - GitHub API rate limit status

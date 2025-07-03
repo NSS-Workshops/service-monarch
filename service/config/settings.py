@@ -12,7 +12,8 @@ class Settings(BaseModel):
     GITHUB_RATE_LIMIT_PAUSE: int = 5
     REPO_MIGRATION_PAUSE: int = 10
     PROMETHEUS_PORT: int = 8080
-    TEMPLATE_DIR: str = os.path.dirname(os.path.realpath(__file__))
+    # Update template directory path to account for the new directory structure
+    TEMPLATE_DIR: str = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
     SLACK_BOT_TOKEN: str = os.getenv("SLACK_BOT_TOKEN")
 
     class Config:
