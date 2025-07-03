@@ -1,6 +1,29 @@
 """ Models for the Monarch service """
-from typing import List
+from enum import Enum
+from typing import List, Optional
+from datetime import datetime
 from pydantic import BaseModel
+
+
+class MigrationStatus(str, Enum):
+    """Enum representing the status of an issue migration"""
+    PENDING = "pending"
+    IN_FLIGHT = "in_flight"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+class MigrationState(BaseModel):
+    """Tracks the state of an issue migration"""
+    sequence_id: int
+    source_repo: str
+    target_repo: str
+    issue_id: str  # Unique identifier for the issue
+    issue_data: dict  # The issue data to be migrated
+    status: MigrationStatus = MigrationStatus.PENDING
+    attempts: int = 0
+    last_attempt: Optional[datetime] = None
+    error_message: Optional[str] = None
+    completed_at: Optional[datetime] = None
 
 class IssueTemplate(BaseModel):
     """ Data required to create a new issue from a template """

@@ -4,6 +4,7 @@ import sys
 import time
 import signal
 import threading
+import asyncio
 import concurrent.futures
 from typing import List, Dict
 import valkey
@@ -17,6 +18,9 @@ from resilient_valkey import ResilientValkeyClient
 from resilient_pubsub import ResilientPubSub
 from service_watchdog import ServiceWatchdog
 from circuit_breaker import CircuitBreaker, CircuitBreakerOpenError
+from migration_state_manager import MigrationStateManager
+from sliding_window_controller import SlidingWindowController
+from models import MigrationState, MigrationStatus
 
 from config import Settings
 from models import IssueTemplate, Issue, MigrationData
@@ -81,9 +85,25 @@ class TicketMigrator:
         self.pubsub = None
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=5)
 
+        # Initialize migration state manager and sliding window controller
+        self.migration_state_manager = MigrationStateManager(self.valkey_client)
+
+        # Initialize sliding window controller
+        self.window_controller = SlidingWindowController(
+            state_manager=self.migration_state_manager,
+            process_func=self._process_single_migration,
+            initial_window_size=5,
+            retry_interval=self.settings.GITHUB_RATE_LIMIT_PAUSE * 2
+        )
+
+        self.window_controller.start()
     def _graceful_shutdown(self, signum, frame):
         """Handle shutdown signals gracefully"""
         logger.info("Received shutdown signal, stopping service gracefully")
+
+        # Stop the window controller
+        if hasattr(self, 'window_controller'):
+            self.window_controller.stop()
 
         # Stop accepting new messages
         if self.pubsub:
@@ -111,7 +131,7 @@ class TicketMigrator:
         with open(template_file, 'r', encoding='utf-8') as f:
             template = f.read()
 
-        return template.format(**template_data.dict())
+        return template.format(**template_data.model_dump())
 
     def _github_api_call(self, func, *args, **kwargs):
         """
@@ -139,6 +159,64 @@ class TicketMigrator:
             # Update circuit breaker failures metric
             self.metrics.circuit_breaker_failures.labels(circuit_name="github_api").inc()
             raise e
+
+    def _process_single_migration(self, migration_state: MigrationState) -> bool:
+        """
+        Process a single migration using the sliding window pattern.
+
+        Args:
+            migration_state: The migration state to process
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            # Create Issue object from the stored data
+            issue = Issue(**migration_state.issue_data)
+
+            # Use the existing migrate_single_issue method
+            # but catch exceptions to handle in this method
+            try:
+                # We need to run this synchronously in this context
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(
+                    self.migrate_single_issue(
+                        migration_state.target_repo,
+                        issue
+                    )
+                )
+                loop.close()
+
+                # If we get here, migration was successful
+                return True
+
+            except CircuitBreakerOpenError:
+                # Circuit is open, we'll retry later
+                logger.warning(
+                    "Circuit breaker open, will retry migration later",
+                    sequence_id=migration_state.sequence_id,
+                    issue_id=migration_state.issue_id
+                )
+                return False
+
+            except Exception as e:
+                logger.error(
+                    "Error in migration",
+                    error=str(e),
+                    sequence_id=migration_state.sequence_id,
+                    issue_id=migration_state.issue_id
+                )
+                return False
+
+        except Exception as e:
+            logger.error(
+                "Error processing migration state",
+                error=str(e),
+                state=migration_state.model_dump()
+            )
+            return False
+
 
     @retry(
         stop=stop_after_attempt(3),
@@ -238,10 +316,10 @@ class TicketMigrator:
                 )
                 return
 
-
             # Format the issues for migration
             issues_to_migrate = []
             for issue in source_issues:
+                # Use the IssueTemplate to format the issue data
                 template_data = IssueTemplate(
                     user_name=issue['user']['login'],
                     user_url=issue['user']['html_url'],
@@ -251,41 +329,55 @@ class TicketMigrator:
                     body=issue['body']
                 )
 
+                # Create a new Issue object
                 new_issue = Issue(
                     title=issue['title'],
                     body=self.format_issue(template_data)
                 )
+
+                # Append the new issue to the list of issues to migrate
                 issues_to_migrate.append(new_issue)
 
-            # Migrate issues to each target repo
+            # Migrate issues to each target repo using sliding window
             for target in data.all_target_repositories:
-                messages = []
-
+                issue_count = 0
                 for issue in issues_to_migrate:
-                    try:
-                        await self.migrate_single_issue(target, issue)
-                    except Exception as e:
-                        messages.append(
-                            f'Error creating issue {issue.title}. {str(e)}.'
-                        )
+                    # Create a unique ID for this issue
+                    issue_id = f"{issue.title}_{hash(issue.body)}"
 
-                    # Pause between issues to prevent rate limiting
-                    time.sleep(self.settings.GITHUB_RATE_LIMIT_PAUSE)
-
-                # Send status message to Slack
-                if messages:
-                    await slack.send_message(
-                        data.notification_channel,
-                        '\n'.join(messages)
-                    )
-                else:
-                    await slack.send_message(
-                        data.notification_channel,
-                        f'All issues migrated successfully to {target}.'
+                    # Create migration state so we can track its progress
+                    migration_state = MigrationState(
+                        sequence_id=self.migration_state_manager.get_next_sequence_id(),
+                        source_repo=data.source_repo,
+                        target_repo=target,
+                        issue_id=issue_id,
+                        issue_data=issue.model_dump(),
+                        status=MigrationStatus.PENDING
                     )
 
-                # Pause between repositories
+                    # Add to sliding window controller
+                    self.window_controller.add_migration(migration_state)
+                    issue_count += 1
+
+                    # No need to sleep between issues as the window controller
+                    # will manage the rate of migrations
+
+                # We still pause between repositories
                 time.sleep(self.settings.REPO_MIGRATION_PAUSE)
+
+                # Send initial status message to Slack
+                await slack.send_message(
+                    data.notification_channel,
+                    f"Migration to {target} has been queued. You'll receive updates as issues are processed."
+                )
+
+                # Start the completion checker for this target repository
+                self.start_completion_checker(
+                    data.source_repo,
+                    target,
+                    data.notification_channel,
+                    issue_count
+                )
 
         except Exception as e:
             logger.error(
@@ -299,11 +391,293 @@ class TicketMigrator:
             )
             raise
 
+    async def check_migration_completion(self, source_repo: str, target_repo: str, notification_channel: str, total_issues: int):
+        """
+        Check if all migrations for a specific source/target pair are complete
+        and send a notification if they are.
+        """
+        slack = SlackAPI()
+
+        try:
+            # Get counts by status for this specific source/target pair
+            pending_key = f"monarch:migration:status:{MigrationStatus.PENDING.value}"
+            in_flight_key = f"monarch:migration:status:{MigrationStatus.IN_FLIGHT.value}"
+            completed_key = f"monarch:migration:status:{MigrationStatus.COMPLETED.value}"
+            failed_key = f"monarch:migration:status:{MigrationStatus.FAILED.value}"
+
+            # Filter keys by source/target and this specific migration batch
+            # We need to be more specific to avoid counting migrations from previous runs
+            prefix = f"monarch:migration:{source_repo}:{target_repo}:"
+
+            # Get all keys for this migration batch
+            all_keys = set()
+
+            # Collect all keys from all status sets
+            for status_key in [pending_key, in_flight_key, completed_key, failed_key]:
+                keys = self.valkey_client.smembers(status_key)
+                for key in keys:
+                    if key.startswith(prefix):
+                        all_keys.add(key)
+
+            # Now count by status, but only for keys that belong to this batch
+            # This ensures we don't double-count or include migrations from previous runs
+            pending_count = 0
+            in_flight_count = 0
+            completed_count = 0
+            failed_count = 0
+
+            # For each key, check its current status
+            for key in all_keys:
+                data = self.valkey_client.get(key)
+                if data:
+                    migration = MigrationState.model_validate_json(data)
+                    if migration.status == MigrationStatus.PENDING:
+                        pending_count += 1
+                    elif migration.status == MigrationStatus.IN_FLIGHT:
+                        in_flight_count += 1
+                    elif migration.status == MigrationStatus.COMPLETED:
+                        completed_count += 1
+                    elif migration.status == MigrationStatus.FAILED:
+                        failed_count += 1
+
+            # Log status periodically
+            if (pending_count + in_flight_count + completed_count + failed_count) > 0:
+                logger.info(
+                    f"Migration status for {source_repo} -> {target_repo}: " +
+                    f"Pending: {pending_count}, In-flight: {in_flight_count}, " +
+                    f"Completed: {completed_count}, Failed: {failed_count}, " +
+                    f"Total expected: {total_issues}"
+                )
+
+            # Check if all migrations are complete (either completed or failed)
+            completion_condition = pending_count == 0 and in_flight_count == 0 and (completed_count + failed_count) >= total_issues
+
+            if completion_condition:
+                logger.info(
+                    f"Migration completion detected for {source_repo} -> {target_repo}. " +
+                    f"Completed: {completed_count}, Failed: {failed_count}, Total: {total_issues}"
+                )
+
+                # All migrations are complete, send final notification
+                if failed_count == 0:
+                    message = f"All {total_issues} issues have been successfully migrated to {target_repo}."
+                    logger.info(f"Sending completion notification: {message}")
+
+                    try:
+                        await slack.send_message(notification_channel, message)
+                        logger.info(f"Successfully sent completion notification to {notification_channel}")
+                    except Exception as e:
+                        logger.error(f"Failed to send completion notification: {str(e)}")
+                else:
+                    # Get failed migrations
+                    failed_migrations = []
+                    for key in all_keys:
+                        data = self.valkey_client.get(key)
+                        if data:
+                            migration = MigrationState.model_validate_json(data)
+                            if migration.status == MigrationStatus.FAILED:
+                                failed_migrations.append(migration)
+
+                    # Create error message
+                    error_messages = []
+                    for migration in failed_migrations:
+                        error_messages.append(
+                            f"Error creating issue {migration.issue_id}: {migration.error_message or 'Unknown error'}."
+                        )
+
+                    message = f"Migration to {target_repo} completed with {failed_count} errors:\n" + '\n'.join(error_messages)
+                    logger.info(f"Sending completion notification with errors: {message}")
+
+                    try:
+                        await slack.send_message(notification_channel, message)
+                        logger.info(f"Successfully sent completion notification to {notification_channel}")
+                    except Exception as e:
+                        logger.error(f"Failed to send completion notification: {str(e)}")
+
+                # Return True to indicate completion was detected and notification sent
+                return True
+
+            # Not all migrations are complete yet
+            return False
+
+        except Exception as e:
+            logger.error("Error checking migration completion", error=str(e))
+            return False
+
+    def start_completion_checker(self, source_repo: str, target_repo: str, notification_channel: str, total_issues: int, check_interval: int = 10):
+        """Start a thread to check for migration completion"""
+
+        logger.info(f"Starting completion checker for {source_repo} -> {target_repo} with {total_issues} issues")
+
+        def checker_task():
+            completion_detected = False
+            check_count = 0
+            max_checks = 600  # 10 minutes at 1 second intervals
+
+            while not completion_detected and check_count < max_checks:
+                try:
+                    check_count += 1
+                    if check_count % 10 == 0:  # Log every 10 checks to avoid log spam
+                        logger.info(f"Checking completion status for {source_repo} -> {target_repo} (attempt {check_count}/{max_checks})")
+
+                    # Create a new event loop for this thread
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+
+                    # Check for completion
+                    try:
+                        completion_detected = loop.run_until_complete(
+                            self.check_migration_completion(
+                                source_repo, target_repo, notification_channel, total_issues
+                            )
+                        )
+
+                        if completion_detected:
+                            logger.info(f"Completion detected for {source_repo} -> {target_repo} on attempt {check_count}")
+                    except Exception as e:
+                        logger.error(f"Error checking completion: {str(e)}")
+                    finally:
+                        loop.close()
+
+                    if completion_detected:
+                        logger.info(
+                            f"Migration completion detected and notification sent for {source_repo} -> {target_repo}"
+                        )
+                        break
+
+                except Exception as e:
+                    logger.error(f"Error in completion checker task: {str(e)}")
+
+                # Sleep for the check interval
+                time.sleep(check_interval)
+
+            # If we reached max checks without completion, send a timeout notification
+            if not completion_detected and check_count >= max_checks:
+                logger.warning(f"Completion checker timed out for {source_repo} -> {target_repo} after {check_count} attempts")
+
+                try:
+                    # Create a new event loop for this thread
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+
+                    # Send timeout notification
+                    slack_api = SlackAPI()
+                    loop.run_until_complete(
+                        slack_api.send_message(
+                            notification_channel,
+                            f"Migration to {target_repo} may be incomplete. Completion checker timed out after {check_count} attempts."
+                        )
+                    )
+
+                    loop.close()
+                except Exception as e:
+                    logger.error(f"Failed to send timeout notification: {str(e)}")
+
+        # Start the checker thread
+        thread = threading.Thread(target=checker_task, daemon=True)
+        thread.start()
+
+        return thread
+
+    async def report_migration_status(self, channel: str, source_repo: str, target_repo: str):
+        """Report on the status of migrations for a specific source/target pair"""
+        slack = SlackAPI()
+
+        try:
+            # Get counts by status
+            statuses = {}
+            for status in MigrationStatus:
+                status_key = f"monarch:migration:status:{status.value}"
+                count = len(self.valkey_client.smembers(status_key))
+                statuses[status.value] = count
+
+            # Get recent failures
+            failed = self.migration_state_manager.get_migrations_by_status(
+                MigrationStatus.FAILED,
+                limit=5
+            )
+
+            # Create status message
+            message = f"*Migration Status Report*\n"
+            message += f"Source: {source_repo}\n"
+            message += f"Target: {target_repo}\n\n"
+
+            message += f"*Status Counts:*\n"
+            for status, count in statuses.items():
+                message += f"• {status.capitalize()}: {count}\n"
+
+            if failed:
+                message += f"\n*Recent Failures:*\n"
+                for f in failed:
+                    message += f"• {f.issue_id}: {f.error_message or 'Unknown error'} (Attempts: {f.attempts})\n"
+
+            # Send status message
+            await slack.send_message(channel, message)
+
+        except Exception as e:
+            logger.error("Failed to report migration status", error=str(e))
+            await slack.send_message(
+                channel,
+                f"Failed to generate migration status report: {str(e)}"
+            )
+
+    def start_status_reporting(self, channel: str, source_repo: str, target_repo: str, interval: int = 300):
+        """Start periodic status reporting"""
+
+        def report_task():
+            while True:
+                try:
+                    # Create a new event loop for this thread
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+
+                    # Run the report method
+                    loop.run_until_complete(
+                        self.report_migration_status(channel, source_repo, target_repo)
+                    )
+
+                    loop.close()
+
+                except Exception as e:
+                    logger.error("Error in status reporting task", error=str(e))
+
+                # Sleep for the interval
+                time.sleep(interval)
+
+        # Start the reporting thread
+        thread = threading.Thread(target=report_task, daemon=True)
+        thread.start()
+
+        return thread
+
+
     async def run(self):
         """ Run the Monarch service with improved message handling. """
 
         # Start Prometheus metrics server
         start_http_server(self.settings.PROMETHEUS_PORT)
+
+        # Recover in-progress migrations
+        def recover_migrations():
+            try:
+                # Get in-flight migrations and reset to pending
+                in_flight = self.migration_state_manager.get_migrations_by_status(
+                    MigrationStatus.IN_FLIGHT
+                )
+
+                if in_flight:
+                    logger.info(f"Recovering {len(in_flight)} in-flight migrations")
+
+                    for migration in in_flight:
+                        migration.status = MigrationStatus.PENDING
+                        self.migration_state_manager.save_migration_state(migration)
+
+            except Exception as e:
+                logger.error("Failed to recover migrations", error=str(e))
+
+        # Run recovery in a separate thread
+        recovery_thread = threading.Thread(target=recover_migrations, daemon=True)
+        recovery_thread.start()
 
         # Start the web interface in a background thread
         web_thread = threading.Thread(
@@ -313,6 +687,27 @@ class TicketMigrator:
         )
         web_thread.start()
         logger.info('Started log web interface', port=8081)
+
+        def recover_migrations():
+            try:
+                # Get in-flight migrations and reset to pending
+                in_flight = self.migration_state_manager.get_migrations_by_status(
+                    MigrationStatus.IN_FLIGHT
+                )
+
+                if in_flight:
+                    logger.info(f"Recovering {len(in_flight)} in-flight migrations")
+
+                    for migration in in_flight:
+                        migration.status = MigrationStatus.PENDING
+                        self.migration_state_manager.save_migration_state(migration)
+
+            except Exception as e:
+                logger.error("Failed to recover migrations", error=str(e))
+
+        # Run recovery in a separate thread
+        recovery_thread = threading.Thread(target=recover_migrations, daemon=True)
+        recovery_thread.start()
 
         # Initialize the resilient PubSub
         def message_handler(message):
