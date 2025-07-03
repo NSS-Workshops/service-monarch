@@ -6,6 +6,7 @@ This document outlines the architectural patterns and strategies used in the Mon
 
 - [Monarch Service Architecture](#monarch-service-architecture)
   - [Table of Contents](#table-of-contents)
+  - [Modular Directory Structure](#modular-directory-structure)
   - [Settings Management](#settings-management)
   - [Circuit Breaker Pattern](#circuit-breaker-pattern)
   - [Heartbeat and Watchdog Mechanism](#heartbeat-and-watchdog-mechanism)
@@ -19,6 +20,69 @@ This document outlines the architectural patterns and strategies used in the Mon
   - [Sliding Window Pattern](#sliding-window-pattern)
     - [Polling Optimization](#polling-optimization)
   - [Conclusion](#conclusion)
+
+## Modular Directory Structure
+
+The Monarch service uses a modular directory structure to organize code by functionality, improving maintainability and separation of concerns:
+
+```
+service/
+├── core/                 # Core service functionality
+│   ├── __init__.py
+│   └── service.py        # Main service class
+├── config/               # Configuration settings
+│   ├── __init__.py
+│   └── settings.py       # Settings class
+├── models/               # Data models
+│   ├── __init__.py
+│   └── models.py         # Pydantic models
+├── integrations/         # External service integrations
+│   ├── __init__.py
+│   ├── github.py         # GitHub API integration
+│   ├── github_request.py # GitHub API request handling
+│   └── slack.py          # Slack API integration
+├── messaging/            # Message handling and pub/sub
+│   ├── __init__.py
+│   ├── handler.py        # Message processing
+│   └── resilient_pubsub.py # Resilient PubSub implementation
+├── migration/            # Migration processing
+│   ├── __init__.py
+│   ├── processor.py      # Migration processing logic
+│   ├── state_manager.py  # Migration state persistence
+│   └── sliding_window_controller.py # Sliding window pattern
+├── monitoring/           # Monitoring and metrics
+│   ├── __init__.py
+│   ├── monitor.py        # Monitoring functionality
+│   ├── metrics.py        # Prometheus metrics
+│   └── service_watchdog.py # Service health monitoring
+├── notifications/        # Notification handling
+│   ├── __init__.py
+│   └── notifier.py       # Notification sending logic
+├── persistence/          # Data persistence
+│   ├── __init__.py
+│   └── resilient_valkey.py # Resilient Valkey client
+├── resilience/           # Resilience patterns
+│   ├── __init__.py
+│   └── circuit_breaker.py # Circuit breaker pattern
+├── logging/              # Logging functionality
+│   ├── __init__.py
+│   ├── valkey_log_handler.py # Valkey log handler
+│   ├── log_retriever.py  # Log retrieval functionality
+│   └── web_interface.py  # Web interface for logs
+└── templates/            # HTML and markdown templates
+    ├── index.html        # HTML template for log web interface
+    └── issue.md          # Issue template
+```
+
+This modular structure provides several benefits:
+
+- **Clear Separation of Concerns**: Each directory focuses on a specific aspect of the system
+- **Improved Code Organization**: Related functionality is grouped together
+- **Better Maintainability**: Changes to one component are less likely to affect others
+- **Easier Navigation**: Developers can quickly find relevant code
+- **More Intuitive Dependencies**: Dependencies between components are more explicit
+
+The main entry point (`main.py`) remains in the root directory and imports the core service from the appropriate module.
 
 ## Settings Management
 
@@ -168,12 +232,12 @@ The Monarch service implements a sophisticated logging strategy using structured
 │  Structlog  │────▶│ Valkey Log  │────▶│   Valkey    │
 │  Generator  │     │   Handler   │     │   Storage   │
 └─────────────┘     └─────────────┘     └─────────────┘
-                                             │
-                                             ▼
-                                        ┌─────────────┐
-                                        │    Web      │
-                                        │  Interface  │
-                                        └─────────────┘
+                                              │
+                                              ▼
+                                         ┌─────────────┐
+                                         │    Web      │
+                                         │  Interface  │
+                                         └─────────────┘
 ```
 
 Key features:
@@ -214,12 +278,12 @@ The Monarch service uses Valkey (Redis-compatible) for multiple purposes:
 │   Message   │────▶│    Valkey   │────▶│  Subscriber │
 │  Publisher  │     │    Broker   │     │   Service   │
 └─────────────┘     └─────────────┘     └─────────────┘
-                         │
-                         ▼
-                    ┌─────────────┐
-                    │     Log     │
-                    │   Storage   │
-                    └─────────────┘
+                          │
+                          ▼
+                     ┌─────────────┐
+                     │     Log     │
+                     │   Storage   │
+                     └─────────────┘
 ```
 
 Key uses:

@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Monarch Log Viewer</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+        }
+        .filters {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 20px;
+            padding: 15px;
+            background-color: #f9f9f9;
+            border-radius: 5px;
+        }
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+        }
+        label {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        input, select {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            padding: 8px 15px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .log-container {
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            max-height: 600px;
+            overflow-y: auto;
+        }
+        .log-entry__header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .log-entry {
+            padding: 0.3rem;
+            border-bottom: 1px solid #eee;
+        }
+        .log-entry__detail {
+            margin-bottom: 1rem;
+        }
+        .log-entry:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        .log-level-info {
+            border-left: 4px solid #2196F3;
+        }
+        .log-level-error {
+            border-left: 4px solid #F44336;
+        }
+        .log-level-warning {
+            border-left: 4px solid #FF9800;
+        }
+        .log-level-debug {
+            border-left: 4px solid #9E9E9E;
+        }
+        .details-toggle {
+            cursor: pointer;
+            color: #2196F3;
+            text-decoration: underline;
+        }
+        .details-content {
+            display: none;
+            padding: 10px;
+            background-color: #f5f5f5;
+            border-radius: 4px;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Monarch Log Viewer</h1>
+
+        <div class="filters">
+            <div class="filter-group">
+                <label for="start-time">Start Time:</label>
+                <input type="datetime-local" id="start-time">
+            </div>
+
+            <div class="filter-group">
+                <label for="end-time">End Time:</label>
+                <input type="datetime-local" id="end-time">
+            </div>
+
+            <div class="filter-group">
+                <label for="log-level">Log Level:</label>
+                <select id="log-level">
+                    <option value="">All Levels</option>
+                </select>
+            </div>
+
+            <div class="filter-group">
+                <label for="service">Service:</label>
+                <select id="service">
+                    <option value="">All Services</option>
+                </select>
+            </div>
+
+            <div class="filter-group">
+                <label for="limit">Limit:</label>
+                <input type="number" id="limit" value="100" min="1" max="1000">
+            </div>
+
+            <div class="filter-group" style="justify-content: flex-end;">
+                <button id="apply-filters">Apply Filters</button>
+            </div>
+        </div>
+
+        <div class="log-container" id="logs">
+            <div class="log-entry">Loading logs...</div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Set default time range (last 24 hours)
+            const now = new Date();
+            const yesterday = new Date(now);
+            yesterday.setDate(yesterday.getDate() - 1);
+
+            document.getElementById('start-time').value = formatDateTime(yesterday);
+            document.getElementById('end-time').value = formatDateTime(now);
+
+            // Load log levels and services
+            fetchLogLevels();
+            fetchServices();
+
+            // Load initial logs
+            fetchLogs();
+
+            // Set up filter button
+            document.getElementById('apply-filters').addEventListener('click', fetchLogs);
+        });
+
+        function formatDateTime(date) {
+            return date.toISOString().slice(0, 16);
+        }
+
+        function fetchLogLevels() {
+            fetch('/api/log-levels')
+                .then(response => response.json())
+                .then(levels => {
+                    const select = document.getElementById('log-level');
+                    levels.forEach(level => {
+                        const option = document.createElement('option');
+                        option.value = level;
+                        option.textContent = level.charAt(0).toUpperCase() + level.slice(1);
+                        select.appendChild(option);
+                    });
+                })
+                .catch(error => {
+                    console.error('Error fetching log levels:', error);
+                });
+        }
+
+        function fetchServices() {
+            fetch('/api/services')
+                .then(response => response.json())
+                .then(services => {
+                    const select = document.getElementById('service');
+                    services.forEach(service => {
+                        const option = document.createElement('option');
+                        option.value = service;
+                        option.textContent = service;
+                        select.appendChild(option);
+                    });
+                })
+                .catch(error => {
+                    console.error('Error fetching services:', error);
+                });
+        }
+
+        function fetchLogs() {
+            const startTime = document.getElementById('start-time').value;
+            const endTime = document.getElementById('end-time').value;
+            const level = document.getElementById('log-level').value;
+            const service = document.getElementById('service').value;
+            const limit = document.getElementById('limit').value;
+
+            let url = `/api/logs?limit=${limit}`;
+            if (startTime) url += `&start_time=${startTime}`;
+            if (endTime) url += `&end_time=${endTime}`;
+            if (level) url += `&level=${level}`;
+            if (service) url += `&service=${service}`;
+
+            fetch(url)
+                .then(response => response.json())
+                .then(logs => {
+                    const logsContainer = document.getElementById('logs');
+                    logsContainer.innerHTML = '';
+
+                    if (logs.length === 0) {
+                        logsContainer.innerHTML = '<div class="log-entry">No logs found matching the criteria.</div>';
+                        return;
+                    }
+
+                    logs.forEach(log => {
+                        const logEntry = document.createElement('div');
+                        logEntry.className = `log-entry log-level-${log.level || 'info'}`;
+
+                        // Format the log entry
+                        const timestamp = log.timestamp ? new Date(log.timestamp).toLocaleString() : 'N/A';
+                        const level = log.level ? log.level.toUpperCase() : 'INFO';
+                        const message = log.event || '';
+
+                        // Remove these fields from the details
+                        const details = {...log};
+                        delete details.timestamp;
+                        delete details.level;
+                        delete details.event;
+
+                        // Create a unique ID for this log entry
+                        const detailsId = `details-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+
+                        logEntry.innerHTML = `
+                            <div class="log-entry__header">
+                                <div class="log-entry__detail"><strong>Message:</strong> ${message}</div>
+                                <div class="log-entry__detail"><strong>Time:</strong> ${timestamp}</div>
+                                <div class="log-entry__detail"><strong>Level:</strong> ${level}</div>
+                            </div>
+                            <div class="details-toggle log-entry__detail" onclick="toggleDetails('${detailsId}')">Show Details</div>
+                            <div id="${detailsId}" class="details-content log-entry__detail">
+                                <pre>${JSON.stringify(details, null, 2)}</pre>
+                            </div>
+                        `;
+
+                        logsContainer.appendChild(logEntry);
+                    });
+                })
+                .catch(error => {
+                    console.error('Error fetching logs:', error);
+                    document.getElementById('logs').innerHTML =
+                        '<div class="log-entry log-level-error">Error loading logs. Please try again.</div>';
+                });
+        }
+
+        function toggleDetails(detailsId) {
+            const detailsElement = document.getElementById(detailsId);
+            const isVisible = detailsElement.style.display === 'block';
+            detailsElement.style.display = isVisible ? 'none' : 'block';
+
+            // Update the toggle text
+            const toggleElement = detailsElement.previousElementSibling;
+            toggleElement.textContent = isVisible ? 'Show Details' : 'Hide Details';
+        }
+    </script>
+</body>
+</html>
