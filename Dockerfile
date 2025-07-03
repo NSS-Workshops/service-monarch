@@ -1,16 +1,16 @@
 FROM python:3.11-slim
 
-WORKDIR /
+WORKDIR /app
 
 # Install dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
-COPY service/ .
+COPY . .
 
 # Expose ports
 EXPOSE 8080
 EXPOSE 8081
 
-CMD ["python", "main.py"]
+CMD ["python", "service/main.py"]
