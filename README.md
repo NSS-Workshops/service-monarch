@@ -26,73 +26,41 @@ for message in pubsub.listen():
         await self.migrate_tickets(data)
 ```
 
-## System Dependencies
+## Prerequisite: Personal Access Token
 
-- Python 3.10+
-- [Valkey](https://valkey.io/topics/installation/)
-- [valkey-py](https://github.com/valkey-io/valkey-py)
-- [pipenv](https://pipenv.pypa.io/en/latest/) virtual environment manager
-
-## Service Dependencies
-
-- [requests](https://docs.python-requests.org/en/latest/index.html) for HTTP communication with Github and Slack
-- [structlog](https://www.structlog.org/en/stable/index.html) for logging
-- [pydantic](https://docs.pydantic.dev/latest/) for data validation
-- [prometheus_client](https://prometheus.github.io/client_python/getting-started/three-step-demo/) for metrics
-- [tenacity](https://tenacity.readthedocs.io/en/latest/) for HTTP request retrying
+1. Log into your Github account
+2. Go to your **Settings**
+3. Click on the last item on the left navigation labeled **Developer Settings**
+4. Click **Peronal access tokens**
+5. Click **Tokens (classic)**
+6. Click **Generate new token** dropdown
+7. Choose **Generate new token (classic)**
+8. In the **Note** field, enter `Learning Platform Token`
+9. Set expiration to 90 days
+10. Choose the following permissions
+    1. `admin:org` 
+    2. `admin:org_hook`
+    3. `repo`
+11. Click **Generate Token** button at the bottom and don't close the window as you will need the generated token below
 
 ## Installation
 
-1. Ensure Valkey is installed on your system by visiting the [Valkey Installation](https://valkey.io/topics/installation/) documentation.
-2. Clone the Monarch repository:
+You will be running this microservice as a Docker container. This service will not start successfully until you have the Valkey message broker container running.
+
+
+1. Clone this repository and then:
     ```sh
-    git clone git@github.com:stevebrownlee/service-monarch.git
     cd service-monarch
     ```
-
-3. Install the required Python packages using `pipenv`:
+2. Open the project with your code editor
+3. Copy the `.env.template` file as `.env`
+4. Open the `.env` file
+5. Copy the personal access token you created above and make it the value of the `GH_PAT` environment variable
+6. Your workshop instructor will provide you with the value of the `SLACK_WEBHOOK_URL` and `SLACK_TOKEN` variables. If they haven't been provided yet, ask the instructor to share them.
+6. Start the container
     ```sh
-    pipenv install
+    docker compose up
     ```
-
-4. Start the shell for the project using `pipenv`:
-    ```sh
-    pipenv shell
-    ```
-5. Open the project with your code editor.
-6. Copy the `.env.template` file as `.env`.
-7. Update the `.env` file with the appropriate values as you generate them.
-8. Run the service in the terminal
-    ```sh
-    cd monarch
-    python main.py
-    ```
-    or start the project in debug mode in your code editor.
-
-## Testing Locally with Valkey CLI
-
-To test the Monarch service using `valkey-cli`, follow these steps:
-
-1. Start the Valkey server _(refer back to Valkey site for instructions)_.
-2. Open a new terminal and connect to Valkey CLI:
-    ```sh
-    valkey-cli
-    ```
-3. Run the **MONITOR** command, which will observe all activity.
-4. In a separate terminal, send a test message to verify Valkey is working correctly:
-    ```sh
-    valkey-cli PUBLISH test-channel "Hello World"
-    ```
-5. Start the Monarch service in debug mode in VSCode.
-6. Publish the following message to Valkey, replacing the source and target repository endpoints:
-    ```sh
-    valkey-cli PUBLISH channel_migrate_issue_tickets '{ "source_repo": "source-org/source-repo-with-issues", "all_target_repositories": ["target-org/target-repo"], "notification_channel": "C06GHMZB3M3"}'
-    ```
-7. You can watch both the Valkey terminal window to see the messaging, and the terminal output in VSCode as the tickets are migrated.
-8. Review the metrics and public logs:
-   - Access the log viewer web interface at: http://localhost:8081/
-   - Access the health endpoint at: http://localhost:8081/health
-   - Access metrics at: http://localhost:8080/
 
 ## Sequence/System Diagram
 
@@ -119,41 +87,28 @@ sequenceDiagram
     deactivate Monarch
 ```
 
-## Deployment
+## Monitoring
 
-For a detailed description of how the Monarch service is deployed, refer to the [WORKFLOW](./WORKFLOW.md) document.
+### Viewing Logs
 
-## Monitoring Production
+Access the log viewer web interface at: http://localhost:8081/
 
-### Monarch
+This provides a user-friendly interface to browse, filter, and search logs.
 
-#### Viewing Logs
-
-You can view logs in two ways:
-
-1. **Web Interface**:
-   - Access the log viewer web interface at: http://{domain}:8081/
-   - This provides a user-friendly interface to browse, filter, and search logs
-
-2. **Direct Server Access**:
-   - `ssh root@monarch.your.domain`
-   - `cd /opt/monarch`
-   - `docker compose logs -f`
-
-#### Health Check
+### Health Check
 
 Monitor the service health status:
-- Access the health endpoint at: http://{domain}:8081/health
+- Access the health endpoint at: http://localhost:8081/health
 - Returns a JSON response with status information including:
   - Overall service status (healthy/degraded/unhealthy)
   - Valkey connection status
   - Last message processing time
   - Service uptime
 
-#### Metrics
+### Metrics
 
 View Prometheus metrics for monitoring service performance:
-- Access metrics at: http://{domain}:8080/
+- Access metrics at: http://localhost:8080/
 - Available metrics include:
   - Issue migration counts and errors
   - GitHub API rate limit status
@@ -162,22 +117,6 @@ View Prometheus metrics for monitoring service performance:
   - Circuit breaker states
   - Watchdog statistics
 
-### Valkey
-
-> You will need to clone the [Infrastructure](https://github.com/stevebrownlee/learnops-infrastructure) repo and run `terraform init` and `terraform plan`.
-
-To enable this, modify the inbound rule on the Valkey droplet in the Terraform config file.
-
-```tf
-inbound_rule {
- protocol = "tcp"
- port_range = "6379"
- source_addresses = ["0.0.0.0/0", "::/0"]
-}
-```
-1. Run `terraform apply` to apply the changes.
-2. Run `valkey-cli -h {your-domain-name} -p 6379` in your local shell.
-3. Once connected, run the **MONITOR** command to watch all activity.
 
 ## Architecture
 
