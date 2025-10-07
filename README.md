@@ -51,8 +51,8 @@ You will be running this microservice as a Docker container. This service will n
 sequenceDiagram
     title Learning Platform Ticket Migration
 
-    API->>Switchboard: PUBLISH {payload}
-    Switchboard->>+Monarch: RECEIVE {payload}
+    API->>Valkey: PUBLISH {payload}
+    Valkey->>+Monarch: RECEIVE {payload}
     activate Monarch
         Monarch->>+Github: GET /issues
         Github-->>-Monarch: List<Issue>
