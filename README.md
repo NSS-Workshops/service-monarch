@@ -26,23 +26,6 @@ for message in pubsub.listen():
         await self.migrate_tickets(data)
 ```
 
-## Prerequisite: Personal Access Token
-
-1. Log into your Github account
-2. Go to your **Settings**
-3. Click on the last item on the left navigation labeled **Developer Settings**
-4. Click **Peronal access tokens**
-5. Click **Tokens (classic)**
-6. Click **Generate new token** dropdown
-7. Choose **Generate new token (classic)**
-8. In the **Note** field, enter `Learning Platform Token`
-9. Set expiration to 90 days
-10. Choose the following permissions
-    1. `admin:org` 
-    2. `admin:org_hook`
-    3. `repo`
-11. Click **Generate Token** button at the bottom and don't close the window as you will need the generated token below
-
 ## Installation
 
 You will be running this microservice as a Docker container. This service will not start successfully until you have the Valkey message broker container running.
