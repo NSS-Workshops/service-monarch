@@ -38,7 +38,7 @@ You will be running this microservice as a Docker container. This service will n
 2. Open the project with your code editor
 3. Copy the `.env.template` file as `.env`
 4. Open the `.env` file
-5. Copy the personal access token you created above and make it the value of the `GH_PAT` environment variable
+5. Copy the personal access token you created when you set up the Learning Platform API and paste it as the `GH_PAT` environment variable
 6. Your workshop instructor will provide you with the value of the `SLACK_WEBHOOK_URL` and `SLACK_TOKEN` variables. If they haven't been provided yet, ask the instructor to share them.
 6. Start the container
     ```sh
